@@ -8,7 +8,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- We only need lucide-react for the components -->
     <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
@@ -21,7 +21,9 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
-        const { Utensils, ShoppingCart, Calculator, Plus, Trash2, Save, Download, User, DollarSign } = lucide;
+        
+        // FIXED: Using lucideReact instead of lucide
+        const { Utensils, ShoppingCart, Calculator, Plus, Trash2, Save, Download, User, DollarSign } = lucideReact;
 
         // Default Users based on your request context
         const INITIAL_USERS = ['Rafi', 'Rahi', 'Anindo', 'Sajid', 'Sajin', 'Ovik'];
@@ -35,6 +37,306 @@
                 { id: 1, date: '2023-12-01', item: 'Rice (25kg)', cost: 1500, buyer: 'Rafi' },
                 { id: 2, date: '2023-12-02', item: 'Chicken', cost: 400, buyer: 'Rahi' },
                 { id: 3, date: '2023-12-03', item: 'Oil & Spices', cost: 350, buyer: 'Sajid' }
+            ]);
+            
+            // mealData structure: { "day-userIndex": mealCount }
+            // Defaulting everyone to 1 meal per day for the first 5 days for demo
+            const [mealData, setMealData] = useState(() => {
+                const initial = {};
+                for(let d=1; d<=5; d++) {
+                    INITIAL_USERS.forEach((_, idx) => {
+                        initial[`${d}-${idx}`] = 1;
+                    });
+                }
+                return initial;
+            });
+
+            // --- Calculations ---
+            const totalExpenses = useMemo(() => expenses.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0), [expenses]);
+
+            const userStats = useMemo(() => {
+                return users.map((user, userIdx) => {
+                    let totalMeals = 0;
+                    for (let d = 1; d <= DAYS_IN_MONTH; d++) {
+                        const val = mealData[`${d}-${userIdx}`];
+                        totalMeals += (val !== undefined && val !== '') ? parseFloat(val) : 0;
+                    }
+                    return { name: user, totalMeals };
+                });
+            }, [users, mealData]);
+
+            const grandTotalMeals = userStats.reduce((sum, u) => sum + u.totalMeals, 0);
+            const mealRate = grandTotalMeals > 0 ? (totalExpenses / grandTotalMeals) : 0;
+
+            const finalSummary = userStats.map(stat => ({
+                ...stat,
+                costToPay: stat.totalMeals * mealRate
+            }));
+
+            // --- Handlers ---
+            const handleMealChange = (day, userIdx, value) => {
+                setMealData(prev => ({
+                    ...prev,
+                    [`${day}-${userIdx}`]: value
+                }));
+            };
+
+            const addExpense = (e) => {
+                e.preventDefault();
+                const form = e.target;
+                const newItem = {
+                    id: Date.now(),
+                    date: form.date.value,
+                    item: form.item.value,
+                    cost: parseFloat(form.cost.value),
+                    buyer: form.buyer.value
+                };
+                setExpenses([...expenses, newItem]);
+                form.reset();
+            };
+
+            const removeExpense = (id) => {
+                setExpenses(expenses.filter(e => e.id !== id));
+            };
+
+            const downloadCSV = () => {
+                let csvContent = "data:text/csv;charset=utf-8,";
+                csvContent += "Name,Total Meals,Meal Rate,Total Cost\n";
+                finalSummary.forEach(row => {
+                    csvContent += `${row.name},${row.totalMeals},${mealRate.toFixed(2)},${row.costToPay.toFixed(2)}\n`;
+                });
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", "meal_manager_summary.csv");
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            // --- Components ---
+
+            const MealGrid = () => (
+                <div className="overflow-x-auto bg-white rounded-lg shadow border border-gray-200">
+                    <table className="w-full text-sm text-left text-gray-500">
+                        <thead className="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0">
+                            <tr>
+                                <th className="px-4 py-3 border-r">Day</th>
+                                {users.map((u, i) => (
+                                    <th key={i} className="px-4 py-3 text-center border-r min-w-[80px]">{u}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {Array.from({ length: DAYS_IN_MONTH }, (_, i) => i + 1).map(day => (
+                                <tr key={day} className="border-b hover:bg-gray-50">
+                                    <td className="px-4 py-2 font-medium text-gray-900 border-r bg-gray-50">{day}</td>
+                                    {users.map((_, uIdx) => (
+                                        <td key={uIdx} className="p-0 border-r">
+                                            <input 
+                                                type="number" 
+                                                min="0"
+                                                step="0.5"
+                                                className="w-full h-full py-2 text-center bg-transparent border-none focus:ring-0 input-cell"
+                                                value={mealData[`${day}-${uIdx}`] !== undefined ? mealData[`${day}-${uIdx}`] : ''}
+                                                placeholder="-"
+                                                onChange={(e) => handleMealChange(day, uIdx, e.target.value)}
+                                            />
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                            {/* Total Row */}
+                            <tr className="bg-blue-50 font-bold text-blue-900 border-t-2 border-blue-200">
+                                <td className="px-4 py-3 border-r">TOTAL</td>
+                                {userStats.map((stat, i) => (
+                                    <td key={i} className="px-4 py-3 text-center border-r">
+                                        {stat.totalMeals}
+                                    </td>
+                                ))}
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            );
+
+            const ExpenseList = () => (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2">
+                        <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                            <table className="w-full text-sm text-left text-gray-500">
+                                <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+                                    <tr>
+                                        <th className="px-4 py-3">Date</th>
+                                        <th className="px-4 py-3">Item</th>
+                                        <th className="px-4 py-3">Shopper</th>
+                                        <th className="px-4 py-3 text-right">Price</th>
+                                        <th className="px-4 py-3 text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {expenses.length === 0 ? (
+                                        <tr><td colSpan="5" className="p-4 text-center text-gray-400">No expenses added yet</td></tr>
+                                    ) : expenses.map((exp) => (
+                                        <tr key={exp.id} className="border-b hover:bg-gray-50">
+                                            <td className="px-4 py-3">{exp.date}</td>
+                                            <td className="px-4 py-3 font-medium text-gray-900">{exp.item}</td>
+                                            <td className="px-4 py-3"><span className="px-2 py-1 bg-gray-100 rounded-full text-xs">{exp.buyer}</span></td>
+                                            <td className="px-4 py-3 text-right font-bold">{exp.cost.toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <button onClick={() => removeExpense(exp.id)} className="text-red-500 hover:text-red-700">
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-gray-50 font-bold text-gray-900">
+                                        <td colSpan="3" className="px-4 py-3 text-right">Total Expenses:</td>
+                                        <td className="px-4 py-3 text-right text-lg">{totalExpenses.toFixed(2)}</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="lg:col-span-1">
+                        <form onSubmit={addExpense} className="bg-white p-6 rounded-lg shadow border border-gray-200 sticky top-6">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <Plus size={20} className="text-green-600"/> Add Expense
+                            </h3>
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                    <input required name="date" type="date" className="w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500" defaultValue={new Date().toISOString().split('T')[0]}/>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
+                                    <input required name="item" type="text" placeholder="e.g. Chicken, Oil" className="w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500"/>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
+                                    <input required name="cost" type="number" min="0" step="0.01" placeholder="0.00" className="w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500"/>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Shopper</label>
+                                    <select name="buyer" className="w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500">
+                                        {users.map(u => <option key={u} value={u}>{u}</option>)}
+                                    </select>
+                                </div>
+                                <button type="submit" className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition font-medium shadow-sm">
+                                    Add Item
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+
+            const SummaryDashboard = () => (
+                <div className="space-y-6">
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
+                            <div className="text-gray-500 text-sm font-medium mb-1">Total Project Meals</div>
+                            <div className="text-3xl font-bold text-gray-800">{grandTotalMeals.toFixed(1)}</div>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-red-500">
+                            <div className="text-gray-500 text-sm font-medium mb-1">Total Expenses</div>
+                            <div className="text-3xl font-bold text-gray-800">{totalExpenses.toFixed(2)}</div>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-purple-500">
+                            <div className="text-gray-500 text-sm font-medium mb-1">Current Meal Rate</div>
+                            <div className="text-3xl font-bold text-purple-600">{mealRate.toFixed(2)}</div>
+                            <div className="text-xs text-gray-400 mt-1">Cost per 1 meal</div>
+                        </div>
+                    </div>
+
+                    {/* Final Table */}
+                    <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                        <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                            <h3 className="font-bold text-lg text-gray-800">Final Cost Breakdown</h3>
+                            <button onClick={downloadCSV} className="flex items-center gap-2 text-sm bg-gray-800 text-white px-3 py-1.5 rounded hover:bg-gray-900">
+                                <Download size={16} /> Export CSV
+                            </button>
+                        </div>
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-gray-100 text-gray-700 uppercase text-xs">
+                                <tr>
+                                    <th className="px-6 py-3">Name</th>
+                                    <th className="px-6 py-3 text-center">Meals Eaten</th>
+                                    <th className="px-6 py-3 text-right">Meal Rate</th>
+                                    <th className="px-6 py-3 text-right">Total Cost To Pay</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                                {finalSummary.map((row, idx) => (
+                                    <tr key={idx} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 font-medium text-gray-900 flex items-center gap-2">
+                                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-bold">
+                                                {row.name.charAt(0)}
+                                            </div>
+                                            {row.name}
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            <span className="inline-block px-2 py-1 bg-gray-100 rounded text-gray-800 font-bold">
+                                                {row.totalMeals}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-right text-gray-500">{mealRate.toFixed(2)}</td>
+                                        <td className="px-6 py-4 text-right font-bold text-red-600">
+                                            {row.costToPay.toFixed(2)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="max-w-6xl mx-auto p-4 md:p-8 min-h-screen">
+                    <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Mess Management</h1>
+                            <p className="text-gray-500">Track meals, expenses, and calculate rates automatically.</p>
+                        </div>
+                    </header>
+
+                    {/* Tabs */}
+                    <div className="flex flex-wrap gap-2 mb-6">
+                        <button 
+                            onClick={() => setActiveTab('meals')}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition ${activeTab === 'meals' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border'}`}
+                        >
+                            <Utensils size={18} /> Daily Meals
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('expenses')}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition ${activeTab === 'expenses' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border'}`}
+                        >
+                            <ShoppingCart size={18} /> Bazar List
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('summary')}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition ${activeTab === 'summary' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border'}`}
+                        >
+                            <Calculator size={18} /> Final Calculation
+                        </button>
+                    </div>
+
+                    {/* Content Area */}
+                    <main>
+                        {activeTab === 'meals' && <MealGrid />}
+                        {activeTab === 'expenses' && <ExpenseList />}
+                        {activeTab === 'summary' && <SummaryDashboard />}
+                    </main>
+                </div>
+                     { id: 3, date: '2023-12-03', item: 'Oil & Spices', cost: 350, buyer: 'Sajid' }
             ]);
             
             // mealData structure: { "day-userIndex": mealCount }
